@@ -43,6 +43,10 @@ jobs:
         working-directory: apps/desktop
         run: npm install
 
+      - name: Generate Windows-compatible icons
+        working-directory: apps/desktop
+        run: npm run icons
+
       - name: Build NSIS installer
         working-directory: apps/desktop
         run: npm run tauri build -- --bundles nsis

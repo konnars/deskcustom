@@ -5,7 +5,8 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "icons": "tauri icon src-tauri/icons/icon.png --output src-tauri/icons"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
