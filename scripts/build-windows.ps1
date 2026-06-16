@@ -10,11 +10,22 @@ npm install
 Write-Host "==> Building NSIS installer..."
 npm run build
 
-$bundle = "src-tauri\target\release\bundle\nsis"
+$bundleDirs = @(
+    "..\..\target\release\bundle\nsis",
+    "src-tauri\target\release\bundle\nsis"
+)
 $dist = "..\..\dist"
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
-if (Test-Path $bundle) {
+$bundle = $null
+foreach ($dir in $bundleDirs) {
+    if (Test-Path $dir) {
+        $bundle = $dir
+        break
+    }
+}
+
+if ($bundle) {
     Copy-Item "$bundle\*.exe" $dist -Force
     Write-Host "Installer copied to dist\"
     Get-ChildItem $dist

@@ -57,9 +57,19 @@ jobs:
           $version = (Get-Content apps/desktop/src-tauri/tauri.conf.json | ConvertFrom-Json).version
           New-Item -ItemType Directory -Force -Path dist | Out-Null
 
-          $installer = Get-ChildItem "apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
+          $bundleDirs = @(
+            "target/release/bundle/nsis",
+            "apps/desktop/src-tauri/target/release/bundle/nsis"
+          )
+          $installer = $null
+          foreach ($dir in $bundleDirs) {
+            if (Test-Path $dir) {
+              $installer = Get-ChildItem "$dir/*-setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($installer) { break }
+            }
+          }
           if (-not $installer) {
-            Write-Error "NSIS installer not found in bundle/nsis/"
+            Write-Error "NSIS installer not found under target/release/bundle/nsis/"
           }
 
           $outName = "Deskcustom_${version}_x64-setup.exe"
