@@ -2,9 +2,9 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Deskcustom",
   "version": "0.1.0",
-  "identifier": "com.deskcustom.app",
+  "identifier": "com.deskcustom.desktop",
   "build": {
-    "frontendDist": ".."
+    "frontendDist": "../ui"
   },
   "app": {
     "withGlobalTauri": true,
