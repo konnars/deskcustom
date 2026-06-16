@@ -2,43 +2,62 @@
 """Local update server for Deskcustom — run on any PC in your LAN.
 
 Usage:
-  python3 scripts/local-update-server.py /path/to/installers
+  python3 scripts/local-update-server.py dist
 
-Then in Deskcustom set update URL to:
-  http://YOUR_IP:8765/latest.json
+Then in Deskcustom (Windows) set update URL to:
+  http://YOUR_LAN_IP:8765/latest.json
+
+Put the NSIS installer in the folder before starting:
+  dist/Deskcustom_0.1.1_x64-setup.exe
 """
+
+from __future__ import annotations
 
 import json
 import os
+import socket
 import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-PORT = 8765
-VERSION = os.environ.get("DESKCUSTOM_VERSION", "0.1.0")
+PORT = int(os.environ.get("DESKCUSTOM_UPDATE_PORT", "8765"))
+VERSION = os.environ.get("DESKCUSTOM_VERSION", "0.1.1")
 
 
-def write_manifest(folder: Path) -> None:
+def lan_ip() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
+def write_manifest(folder: Path, host: str) -> None:
     manifest = {
         "version": VERSION,
-        "notes": "Local LAN update",
+        "notes": "Локальное обновление Deskcustom с Mac/PC в LAN",
         "platforms": {},
     }
 
-    for file in folder.iterdir():
+    for file in sorted(folder.iterdir()):
         if not file.is_file():
             continue
         name = file.name.lower()
         if name.endswith("-setup.exe") or name.endswith(".msi"):
             manifest["platforms"]["windows-x86_64"] = {
-                "url": f"http://{{HOST}}:{PORT}/{file.name}"
+                "url": f"http://{host}:{PORT}/{file.name}"
             }
         elif name.endswith(".dmg"):
             manifest["platforms"]["darwin-aarch64"] = {
-                "url": f"http://{{HOST}}:{PORT}/{file.name}"
+                "url": f"http://{host}:{PORT}/{file.name}"
+            }
+        elif name.endswith(".app.tar.gz") or name.endswith(".app.zip"):
+            manifest["platforms"]["darwin-aarch64"] = {
+                "url": f"http://{host}:{PORT}/{file.name}"
             }
 
-    text = json.dumps(manifest, indent=2)
+    text = json.dumps(manifest, indent=2, ensure_ascii=False)
     (folder / "latest.json").write_text(text, encoding="utf-8")
     print("Wrote latest.json:")
     print(text)
@@ -56,13 +75,24 @@ class Handler(SimpleHTTPRequestHandler):
 def main() -> None:
     folder = Path(sys.argv[1] if len(sys.argv) > 1 else "dist").resolve()
     folder.mkdir(parents=True, exist_ok=True)
-    write_manifest(folder)
+
+    host = os.environ.get("DESKCUSTOM_HOST", lan_ip())
+    write_manifest(folder, host)
+
+    if not any(
+        f.is_file() and f.name.lower().endswith(("-setup.exe", ".msi"))
+        for f in folder.iterdir()
+    ):
+        print()
+        print("WARNING: no Windows installer (*-setup.exe) in dist/")
+        print("Download the latest artifact from GitHub Actions and copy the .exe here.")
+        print()
 
     os.chdir(folder)
-    host = "0.0.0.0"
-    server = ThreadingHTTPServer((host, PORT), Handler)
-    print(f"Serving {folder} on http://0.0.0.0:{PORT}/latest.json")
-    print("Replace {HOST} in latest.json with this machine's LAN IP.")
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    print(f"Serving {folder}")
+    print(f"Manifest: http://{host}:{PORT}/latest.json")
+    print("Press Ctrl+C to stop.")
     server.serve_forever()
 
 

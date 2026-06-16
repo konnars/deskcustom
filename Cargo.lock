@@ -716,7 +716,7 @@ dependencies = [
 
 [[package]]
 name = "deskcustom"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -730,7 +730,7 @@ dependencies = [
 
 [[package]]
 name = "deskcustom-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "deskcustom-config",
@@ -752,7 +752,7 @@ dependencies = [
 
 [[package]]
 name = "deskcustom-config"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dirs",
  "serde",
@@ -762,7 +762,7 @@ dependencies = [
 
 [[package]]
 name = "deskcustom-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -778,7 +778,7 @@ dependencies = [
 
 [[package]]
 name = "deskcustom-platform"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -792,7 +792,7 @@ dependencies = [
 
 [[package]]
 name = "deskcustom-proto"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "thiserror 2.0.18",
