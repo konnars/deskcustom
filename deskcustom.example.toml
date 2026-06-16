@@ -1,0 +1,47 @@
+role = "server"
+bind = "0.0.0.0"
+
+[server]
+capture_input = true
+edge_threshold_px = 2
+
+[client]
+# Mac client connects to Windows server IP
+server_addr = "192.168.1.100:24800"
+
+[client.mouse]
+dpi_scale = 1.5
+poll_rate_cap_hz = 500
+smoothing = "ewma"
+ewma_alpha = 0.35
+coalesce_us = 1500
+drop_stale_us = 8000
+
+[[screens]]
+name = "windows-pc"
+alias = "win"
+
+[[screens]]
+name = "macbook"
+alias = "mac"
+switch_edge = "right"
+
+[screens.mouse]
+dpi_scale = 1.8
+ewma_alpha = 0.4
+
+[keyboard]
+sync_layout_from_server = false
+alt_shift_policy = "local_only"
+
+[debug]
+log_events = true
+metrics_interval_secs = 5
+json_log = false
+
+[update]
+enabled = true
+# LAN update server: python3 scripts/local-update-server.py dist
+manifest_url = "http://192.168.1.50:8765/latest.json"
+trust_local_network = true
+check_interval_secs = 1800

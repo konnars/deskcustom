@@ -1,0 +1,35 @@
+[package]
+name = "deskcustom-app"
+version.workspace = true
+edition.workspace = true
+description = "Deskcustom desktop app"
+
+[lib]
+name = "deskcustom_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "deskcustom-app"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow.workspace = true
+deskcustom-config.workspace = true
+deskcustom-core.workspace = true
+deskcustom-proto.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+semver = "1"
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(windows)'.dependencies]

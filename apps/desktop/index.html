@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deskcustom</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand">
+        <div class="logo">DC</div>
+        <div>
+          <h1>Deskcustom</h1>
+          <p class="subtitle">Клавиатура и мышь между Windows и Mac</p>
+        </div>
+      </div>
+      <div class="status-pill" id="statusPill">
+        <span class="dot"></span>
+        <span id="statusText">Остановлено</span>
+      </div>
+    </header>
+
+    <div id="updateBanner" class="update-banner hidden">
+      <div class="update-banner-text">
+        <strong id="updateTitle">Доступно обновление</strong>
+        <span id="updateNotes"></span>
+      </div>
+      <div class="update-banner-actions">
+        <button class="btn primary small" id="installUpdateBtn">Обновить и перезапустить</button>
+        <button class="btn ghost small" id="dismissUpdateBtn">Позже</button>
+      </div>
+    </div>
+
+    <div id="errorBanner" class="error-banner hidden">
+      <div>
+        <strong>Что-то пошло не так</strong>
+        <p id="errorBannerText">Попробуй обновить приложение</p>
+      </div>
+      <button class="btn primary small" id="errorUpdateBtn">Обновить и перезапустить</button>
+    </div>
+
+    <main class="grid">
+      <section class="card">
+        <h2>Режим</h2>
+        <div class="role-switch">
+          <button class="role-btn active" data-role="server" id="roleServer">
+            <strong>Windows</strong>
+            <span>Сервер — отдаёт мышь и клавиатуру</span>
+          </button>
+          <button class="role-btn" data-role="client" id="roleClient">
+            <strong>Mac</strong>
+            <span>Клиент — принимает управление</span>
+          </button>
+        </div>
+
+        <div id="serverPanel" class="panel">
+          <label>IP этого компьютера (дай его на Mac)</label>
+          <div class="ip-box" id="localIp">—</div>
+          <p class="hint">Клиент на Mac подключается к этому IP. Порты: 24800 TCP, 24801 UDP.</p>
+        </div>
+
+        <div id="clientPanel" class="panel hidden">
+          <label for="serverAddr">IP Windows PC</label>
+          <input id="serverAddr" type="text" placeholder="192.168.1.100" />
+        </div>
+
+        <div class="actions">
+          <button class="btn primary" id="startBtn">Запустить</button>
+          <button class="btn ghost" id="stopBtn" disabled>Остановить</button>
+        </div>
+        <p class="message" id="message">Нажми «Запустить»</p>
+      </section>
+
+      <section class="card">
+        <h2>Мышь (Mac client)</h2>
+        <div class="slider-row">
+          <label>DPI scale <span id="dpiVal">1.5</span></label>
+          <input type="range" id="dpiScale" min="0.5" max="3" step="0.1" value="1.5" />
+        </div>
+        <div class="slider-row">
+          <label>Сглаживание <span id="alphaVal">0.35</span></label>
+          <input type="range" id="ewmaAlpha" min="0.05" max="1" step="0.05" value="0.35" />
+        </div>
+        <div class="slider-row">
+          <label>Poll rate cap <span id="pollVal">500</span> Hz</label>
+          <input type="range" id="pollCap" min="125" max="1000" step="125" value="500" />
+        </div>
+        <p class="hint">Больше DPI — быстрее курсор. Меньше alpha — плавнее, но с задержкой.</p>
+      </section>
+
+      <section class="card">
+        <h2>Буфер обмена</h2>
+        <label class="check">
+          <input type="checkbox" id="clipboardSync" checked />
+          Синхронизировать Ctrl+C / Ctrl+V между PC
+        </label>
+        <label class="check">
+          <input type="checkbox" id="ctrlToCmd" checked />
+          На Mac: Ctrl+C/V → Cmd+C/V (клавиатура Windows)
+        </label>
+        <p class="hint">Скопировал на Windows — вставляешь на Mac через Ctrl+V. Работает и в обратную сторону.</p>
+      </section>
+
+      <section class="card">
+        <h2>Клавиатура</h2>
+        <label class="check">
+          <input type="checkbox" id="altShiftLocal" checked />
+          Alt+Shift переключает язык локально на каждом Mac/PC
+        </label>
+        <p class="hint">Рекомендуется включено — так работает смена раскладки как без Deskflow.</p>
+      </section>
+
+      <section class="card layout-card">
+        <h2>Раскладка экранов</h2>
+        <div class="screens">
+          <div class="screen local" id="screenLocal">
+            <span class="screen-label" id="localScreenName">Windows PC</span>
+            <span class="screen-badge">локальный</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="screen remote" id="screenRemote">
+            <span class="screen-label" id="remoteScreenName">MacBook</span>
+            <span class="screen-badge">удалённый</span>
+          </div>
+        </div>
+        <p class="hint">Подведи курсор к правому краю Windows — управление перейдёт на Mac.</p>
+      </section>
+
+      <section class="card metrics-card">
+        <h2>Обновления</h2>
+        <p class="hint">Версия: <strong id="appVersion">—</strong></p>
+        <label class="check">
+          <input type="checkbox" id="updateEnabled" checked />
+          Проверять обновления автоматически
+        </label>
+        <label for="updateUrl">URL манифеста (LAN или GitHub)</label>
+        <input id="updateUrl" type="text" placeholder="http://192.168.1.50:8765/latest.json" />
+        <p class="hint">Оставь пустым для подписанных обновлений через GitHub Releases.</p>
+        <button class="btn ghost" id="checkUpdateBtn" style="margin-top:10px">Проверить сейчас</button>
+      </section>
+
+      <section class="card metrics-card">
+        <h2>Сеть</h2>
+        <div class="metrics">
+          <div class="metric">
+            <span class="metric-label">RTT</span>
+            <span class="metric-value" id="rtt">— ms</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Jitter</span>
+            <span class="metric-value" id="jitter">— ms</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Mouse</span>
+            <span class="metric-value" id="mouseCount">0 / 0</span>
+          </div>
+        </div>
+        <p class="hint" id="peerInfo">Клиент не подключён</p>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

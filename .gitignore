@@ -1,0 +1,12 @@
+/target
+**/*.rs.bk
+.DS_Store
+node_modules/
+apps/desktop/node_modules/
+dist/
+*.pdb
+
+# Updater signing keys — never commit
+**/.tauri/
+*.key
+*.key.pub

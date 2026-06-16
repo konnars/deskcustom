@@ -1,0 +1,22 @@
+[package]
+name = "deskcustom-platform"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+deskcustom-proto.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+arboard = "3"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-graphics = "0.24"

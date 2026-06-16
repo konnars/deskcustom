@@ -1,0 +1,12 @@
+{
+  "version": "0.1.0",
+  "notes": "Example local update manifest — replace {HOST} with your LAN IP",
+  "platforms": {
+    "windows-x86_64": {
+      "url": "http://192.168.1.50:8765/Deskcustom_0.1.0_x64-setup.exe"
+    },
+    "darwin-aarch64": {
+      "url": "http://192.168.1.50:8765/Deskcustom_0.1.0_aarch64.dmg"
+    }
+  }
+}
