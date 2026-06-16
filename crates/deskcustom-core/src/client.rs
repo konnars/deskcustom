@@ -9,7 +9,7 @@ use deskcustom_proto::{decode, encode, Message, Role};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::clipboard::{self, PeerSender};
 use crate::debug::{DebugLog, Metrics, log_startup, update_rtt};
@@ -17,6 +17,7 @@ use crate::keyboard::KeyboardPolicy;
 use crate::mouse::MousePipeline;
 use crate::runtime::RuntimeStatus;
 use crate::netbind::bind_udp;
+use crate::netutil::tune_tcp;
 use crate::tcp;
 
 #[cfg(windows)]
@@ -52,6 +53,7 @@ pub async fn run_client(
     let tcp = TcpStream::connect(format!("{tcp_host}:{tcp_port}"))
         .await
         .with_context(|| format!("connect TCP {tcp_host}:{tcp_port}"))?;
+    tune_tcp(&tcp).ok();
 
     {
         let mut st = status.lock().await;
@@ -71,6 +73,23 @@ pub async fn run_client(
         })
         .await;
 
+    let keepalive_tx = peer_tx.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(25)).await;
+            if keepalive_tx
+                .send(Message::Hello {
+                    hostname: hostname(),
+                    role: Role::Client,
+                })
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
+    });
+
     let mut keyboard =
         KeyboardPolicy::new(config.keyboard.clone(), config.clipboard.clone());
     let mouse_profile = config.client.mouse.clone();
@@ -81,28 +100,24 @@ pub async fn run_client(
     #[cfg(not(windows))]
     let mut inject = MacInputInject::new();
 
-    let udp_recv = recv_udp_loop(
+    let tcp_cancel = cancel.clone();
+    tokio::spawn(async move {
+        let _ = tcp_read_loop(reader, tcp_cancel).await;
+    });
+
+    recv_udp_loop(
         udp,
         &mut keyboard,
         &mut mouse_pipe,
         &mut inject,
-        metrics.clone(),
+        metrics,
         debug,
         mouse_profile,
-        status.clone(),
-        peer_tx.clone(),
-        cancel.clone(),
-    );
-
-    let tcp_recv = tcp_read_loop(reader, cancel.clone());
-
-    tokio::select! {
-        res = udp_recv => res?,
-        res = tcp_recv => res?,
-        _ = cancel.cancelled() => {},
-    }
-
-    Ok(())
+        status,
+        peer_tx,
+        cancel,
+    )
+    .await
 }
 
 async fn recv_udp_loop(
@@ -134,7 +149,16 @@ async fn recv_udp_loop(
         let len = match tokio::time::timeout(Duration::from_millis(50), udp.recv(&mut buf)).await {
             Ok(Ok(len)) => len,
             Ok(Err(err)) => return Err(err.into()),
-            Err(_) => continue,
+            Err(_) => {
+                if let Some(smoothed) = mouse_pipe.flush_pending() {
+                    let ev = InputEvent::MouseMove(deskcustom_platform::MouseDelta {
+                        dx: smoothed.dx as i32,
+                        dy: smoothed.dy as i32,
+                    });
+                    inject.inject(&ev)?;
+                }
+                continue;
+            }
         };
 
         let msg = decode(&buf[..len])?;
@@ -215,16 +239,23 @@ async fn tcp_read_loop(
         tokio::select! {
             _ = cancel.cancelled() => break,
             frame = tcp::read_frame(&mut reader) => {
-                let payload = frame?;
-                let msg = decode(&payload)?;
-                match msg {
-                    Message::Hello { hostname, role } => {
-                        info!(hostname, ?role, "server hello");
+                match frame {
+                    Ok(payload) => {
+                        let msg = decode(&payload)?;
+                        match msg {
+                            Message::Hello { hostname, role } => {
+                                info!(hostname, ?role, "server hello");
+                            }
+                            msg @ Message::ClipboardSet { .. } => {
+                                clipboard::handle_incoming(msg).await;
+                            }
+                            _ => {}
+                        }
                     }
-                    msg @ Message::ClipboardSet { .. } => {
-                        clipboard::handle_incoming(msg).await;
+                    Err(err) => {
+                        warn!(?err, "tcp disconnected — clipboard paused, mouse still on udp");
+                        break;
                     }
-                    _ => {}
                 }
             }
         }

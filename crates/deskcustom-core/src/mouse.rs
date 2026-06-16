@@ -85,6 +85,37 @@ impl MousePipeline {
         })
     }
 
+    /// Flush accumulated movement when the stream pauses briefly.
+    pub fn flush_pending(&mut self) -> Option<SmoothedMove> {
+        if self.pending_dx.abs() < 0.5 && self.pending_dy.abs() < 0.5 {
+            return None;
+        }
+
+        let now = std::time::Instant::now();
+        let coalesce = std::time::Duration::from_micros(self.profile.coalesce_us as u64);
+        if let Some(last) = self.last_emit {
+            if now.duration_since(last) < coalesce {
+                return None;
+            }
+        }
+
+        let out_dx = self.pending_dx.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+        let out_dy = self.pending_dy.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+        if out_dx == 0 && out_dy == 0 {
+            return None;
+        }
+
+        self.pending_dx -= out_dx as f32;
+        self.pending_dy -= out_dy as f32;
+        self.last_emit = Some(now);
+        self.seq = self.seq.wrapping_add(1);
+
+        Some(SmoothedMove {
+            dx: out_dx,
+            dy: out_dy,
+        })
+    }
+
     pub fn next_seq(&self) -> u32 {
         self.seq
     }

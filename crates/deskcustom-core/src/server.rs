@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use deskcustom_config::Config;
 use deskcustom_platform::InputCapture;
 use deskcustom_proto::{encode, Message, Role};
@@ -14,10 +14,11 @@ use crate::clipboard::{self, PeerSender};
 use crate::debug::{DebugLog, Metrics, log_startup};
 use crate::runtime::RuntimeStatus;
 use crate::netbind::{bind_tcp, bind_udp};
+use crate::netutil::tune_tcp;
 use crate::tcp;
 
 #[cfg(windows)]
-use deskcustom_platform::{WinInputCapture, cursor_position, screen_width};
+use deskcustom_platform::WinInputCapture;
 
 #[cfg(not(windows))]
 use deskcustom_platform::MacInputCapture;
@@ -151,21 +152,48 @@ async fn capture_loop(
     let udp = UdpSocket::bind("0.0.0.0:0").await?;
     udp.connect(format!("127.0.0.1:{}", config.udp_port)).await.ok();
 
+    #[cfg(windows)]
+    WinInputCapture::configure_edge_switch(config.server.edge_threshold_px as i32);
+
     let mut keyboard =
         crate::keyboard::KeyboardPolicy::new(config.keyboard.clone(), config.clipboard.clone());
-    let mut mouse_pipe = crate::mouse::MousePipeline::new(config.client.mouse.clone());
 
     #[cfg(windows)]
     let mut capture = WinInputCapture::new()?;
     #[cfg(not(windows))]
     let mut capture = MacInputCapture::new()?;
 
-    let edge = config.server.edge_threshold_px as i32;
+    let mut remote_active = false;
     let mut seq: u32 = 0;
 
     loop {
         if cancel.is_cancelled() {
             break;
+        }
+
+        let on_remote = active_screen.lock().await.is_some();
+        if on_remote != remote_active {
+            remote_active = on_remote;
+            #[cfg(windows)]
+            WinInputCapture::set_remote_forwarding(remote_active);
+        }
+
+        #[cfg(windows)]
+        if !on_remote && WinInputCapture::take_edge_hit() {
+            if let Some(screen) = config
+                .screens
+                .iter()
+                .find(|s| s.switch_edge.as_deref() == Some("right"))
+            {
+                *active_screen.lock().await = Some(screen.name.clone());
+                remote_active = true;
+                WinInputCapture::set_remote_forwarding(true);
+                info!(screen = %screen.name, "switched to remote screen");
+                let enter = encode(&Message::ScreenEnter { screen: screen.name.clone() });
+                if let Some(peer) = *active_client.lock().await {
+                    let _ = udp.send_to(&enter, peer).await;
+                }
+            }
         }
 
         let events = capture.poll()?;
@@ -179,49 +207,26 @@ async fn capture_loop(
 
             match &event {
                 deskcustom_platform::InputEvent::MouseMove(delta) => {
-                    #[cfg(windows)]
-                    {
-                        if !on_remote {
-                            if let Ok((x, _)) = cursor_position() {
-                                if x >= screen_width() - edge {
-                                    if let Some(screen) = config
-                                        .screens
-                                        .iter()
-                                        .find(|s| s.switch_edge.as_deref() == Some("right"))
-                                    {
-                                        *active_screen.lock().await = Some(screen.name.clone());
-                                        info!(screen = %screen.name, "switched to remote screen");
-                                        let enter =
-                                            encode(&Message::ScreenEnter { screen: screen.name.clone() });
-                                        if let Some(peer) = *active_client.lock().await {
-                                            let _ = udp.send_to(&enter, peer).await;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
                     if !on_remote {
                         continue;
                     }
 
-                    if let Some(smoothed) = mouse_pipe.ingest(delta.dx, delta.dy) {
-                        seq = seq.wrapping_add(1);
-                        let packet = encode(&Message::MouseMove {
-                            dx: smoothed.dx,
-                            dy: smoothed.dy,
-                            seq,
-                        });
-                        if let Some(peer) = *active_client.lock().await {
-                            let _ = udp.send_to(&packet, peer).await;
-                            metrics.lock().await.mouse_sent += 1;
-                            debug.event(
-                                "out",
-                                "mouse",
-                                serde_json::json!({ "dx": smoothed.dx, "dy": smoothed.dy, "seq": seq }),
-                            );
-                        }
+                    let dx = delta.dx.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                    let dy = delta.dy.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                    if dx == 0 && dy == 0 {
+                        continue;
+                    }
+
+                    seq = seq.wrapping_add(1);
+                    let packet = encode(&Message::MouseMove { dx, dy, seq });
+                    if let Some(peer) = *active_client.lock().await {
+                        let _ = udp.send_to(&packet, peer).await;
+                        metrics.lock().await.mouse_sent += 1;
+                        debug.event(
+                            "out",
+                            "mouse",
+                            serde_json::json!({ "dx": dx, "dy": dy, "seq": seq }),
+                        );
                     }
                 }
                 deskcustom_platform::InputEvent::MouseButton { button, pressed } => {
@@ -276,6 +281,8 @@ async fn handle_tcp_client(
     cancel: CancellationToken,
     peer_slot: Arc<Mutex<Option<PeerSender>>>,
 ) -> Result<()> {
+    tune_tcp(&stream).ok();
+
     let (peer_tx, peer_rx) = clipboard::peer_channel();
     *peer_slot.lock().await = Some(peer_tx.clone());
 
@@ -293,19 +300,26 @@ async fn handle_tcp_client(
         tokio::select! {
             _ = cancel.cancelled() => break,
             frame = tcp::read_frame(&mut reader) => {
-                let payload = frame?;
-                let msg = deskcustom_proto::decode(&payload)?;
-                match msg {
-                    Message::Hello { hostname, role } => {
-                        info!(%peer, hostname, ?role, "hello over tcp");
+                match frame {
+                    Ok(payload) => {
+                        let msg = deskcustom_proto::decode(&payload)?;
+                        match msg {
+                            Message::Hello { hostname, role } => {
+                                info!(%peer, hostname, ?role, "hello over tcp");
+                            }
+                            Message::Key { seq, .. } => {
+                                let _ = peer_tx.send(Message::Ack { seq }).await;
+                            }
+                            msg @ Message::ClipboardSet { .. } => {
+                                clipboard::handle_incoming(msg).await;
+                            }
+                            _ => {}
+                        }
                     }
-                    Message::Key { seq, .. } => {
-                        let _ = peer_tx.send(Message::Ack { seq }).await;
+                    Err(err) => {
+                        warn!(%peer, ?err, "tcp client disconnected");
+                        break;
                     }
-                    msg @ Message::ClipboardSet { .. } => {
-                        clipboard::handle_incoming(msg).await;
-                    }
-                    _ => {}
                 }
             }
         }

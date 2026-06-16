@@ -1,4 +1,8 @@
 use std::net::{IpAddr, UdpSocket as StdUdpSocket};
+use std::time::Duration;
+
+use anyhow::Result;
+use tokio::net::TcpStream;
 
 pub fn local_ipv4_addresses() -> Vec<String> {
     let mut ips = Vec::new();
@@ -28,4 +32,13 @@ pub fn server_display_addr(port: u16) -> String {
         .next()
         .map(|ip| format!("{ip}:{port}"))
         .unwrap_or_else(|| format!("127.0.0.1:{port}"))
+}
+
+pub fn tune_tcp(stream: &TcpStream) -> Result<()> {
+    stream.set_nodelay(true)?;
+    let keepalive = socket2::TcpKeepalive::new()
+        .with_time(Duration::from_secs(30))
+        .with_interval(Duration::from_secs(10));
+    socket2::SockRef::from(stream).set_tcp_keepalive(&keepalive)?;
+    Ok(())
 }

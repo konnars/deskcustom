@@ -26,6 +26,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::{InputCapture, InputEvent, InputInject, MouseDelta};
 
 static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(true);
+static REMOTE_FORWARDING: AtomicBool = AtomicBool::new(false);
+static EDGE_HIT: AtomicBool = AtomicBool::new(false);
+static EDGE_THRESHOLD_PX: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(2);
+static SCREEN_WIDTH_PX: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 
 pub struct WinInputCapture {
     queue: Arc<Mutex<Vec<InputEvent>>>,
@@ -73,6 +77,22 @@ impl WinInputCapture {
 
     pub fn set_active(active: bool) {
         CAPTURE_ACTIVE.store(active, Ordering::SeqCst);
+    }
+
+    pub fn set_remote_forwarding(active: bool) {
+        REMOTE_FORWARDING.store(active, Ordering::SeqCst);
+        if !active {
+            EDGE_HIT.store(false, Ordering::SeqCst);
+        }
+    }
+
+    pub fn configure_edge_switch(threshold_px: i32) {
+        EDGE_THRESHOLD_PX.store(threshold_px, Ordering::SeqCst);
+        SCREEN_WIDTH_PX.store(screen_width(), Ordering::SeqCst);
+    }
+
+    pub fn take_edge_hit() -> bool {
+        EDGE_HIT.swap(false, Ordering::SeqCst)
     }
 }
 
@@ -136,48 +156,82 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
         let info = *(lparam.0 as *const MSLLHOOKSTRUCT);
         match wparam.0 as u32 {
             WM_MOUSEMOVE => {
-                let current = (info.pt.x, info.pt.y);
-                let delta = LAST_MOUSE.with(|cell| {
-                    let mut last = cell.borrow_mut();
-                    let delta = if let Some(prev) = *last {
-                        MouseDelta {
-                            dx: current.0 - prev.0,
-                            dy: current.1 - prev.1,
-                        }
-                    } else {
-                        MouseDelta { dx: 0, dy: 0 }
-                    };
-                    *last = Some(current);
-                    delta
-                });
-                if delta.dx != 0 || delta.dy != 0 {
-                    enqueue_mouse(InputEvent::MouseMove(delta));
+                let x = info.pt.x;
+                if REMOTE_FORWARDING.load(Ordering::SeqCst) {
+                    let current = (x, info.pt.y);
+                    let delta = LAST_MOUSE.with(|cell| {
+                        let mut last = cell.borrow_mut();
+                        let delta = if let Some(prev) = *last {
+                            MouseDelta {
+                                dx: current.0 - prev.0,
+                                dy: current.1 - prev.1,
+                            }
+                        } else {
+                            MouseDelta { dx: 0, dy: 0 }
+                        };
+                        *last = Some(current);
+                        delta
+                    });
+                    if delta.dx != 0 || delta.dy != 0 {
+                        enqueue_mouse(InputEvent::MouseMove(delta));
+                    }
+                } else {
+                    LAST_MOUSE.with(|cell| *cell.borrow_mut() = None);
+                    let w = SCREEN_WIDTH_PX.load(Ordering::Relaxed);
+                    let edge = EDGE_THRESHOLD_PX.load(Ordering::Relaxed);
+                    if w > 0 && x >= w - edge {
+                        EDGE_HIT.store(true, Ordering::SeqCst);
+                    }
                 }
             }
-            WM_LBUTTONDOWN => enqueue_mouse(InputEvent::MouseButton {
-                button: MouseButton::Left,
-                pressed: true,
-            }),
-            WM_LBUTTONUP => enqueue_mouse(InputEvent::MouseButton {
-                button: MouseButton::Left,
-                pressed: false,
-            }),
-            WM_RBUTTONDOWN => enqueue_mouse(InputEvent::MouseButton {
-                button: MouseButton::Right,
-                pressed: true,
-            }),
-            WM_RBUTTONUP => enqueue_mouse(InputEvent::MouseButton {
-                button: MouseButton::Right,
-                pressed: false,
-            }),
-            WM_MBUTTONDOWN => enqueue_mouse(InputEvent::MouseButton {
-                button: MouseButton::Middle,
-                pressed: true,
-            }),
-            WM_MBUTTONUP => enqueue_mouse(InputEvent::MouseButton {
-                button: MouseButton::Middle,
-                pressed: false,
-            }),
+            WM_LBUTTONDOWN => {
+                if REMOTE_FORWARDING.load(Ordering::SeqCst) {
+                    enqueue_mouse(InputEvent::MouseButton {
+                        button: MouseButton::Left,
+                        pressed: true,
+                    });
+                }
+            }
+            WM_LBUTTONUP => {
+                if REMOTE_FORWARDING.load(Ordering::SeqCst) {
+                    enqueue_mouse(InputEvent::MouseButton {
+                        button: MouseButton::Left,
+                        pressed: false,
+                    });
+                }
+            }
+            WM_RBUTTONDOWN => {
+                if REMOTE_FORWARDING.load(Ordering::SeqCst) {
+                    enqueue_mouse(InputEvent::MouseButton {
+                        button: MouseButton::Right,
+                        pressed: true,
+                    });
+                }
+            }
+            WM_RBUTTONUP => {
+                if REMOTE_FORWARDING.load(Ordering::SeqCst) {
+                    enqueue_mouse(InputEvent::MouseButton {
+                        button: MouseButton::Right,
+                        pressed: false,
+                    });
+                }
+            }
+            WM_MBUTTONDOWN => {
+                if REMOTE_FORWARDING.load(Ordering::SeqCst) {
+                    enqueue_mouse(InputEvent::MouseButton {
+                        button: MouseButton::Middle,
+                        pressed: true,
+                    });
+                }
+            }
+            WM_MBUTTONUP => {
+                if REMOTE_FORWARDING.load(Ordering::SeqCst) {
+                    enqueue_mouse(InputEvent::MouseButton {
+                        button: MouseButton::Middle,
+                        pressed: false,
+                    });
+                }
+            }
             _ => {}
         }
     }

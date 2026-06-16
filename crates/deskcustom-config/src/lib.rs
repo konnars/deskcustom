@@ -141,10 +141,10 @@ fn default_smoothing() -> String {
     "ewma".into()
 }
 fn default_alpha() -> f32 {
-    0.35
+    0.45
 }
 fn default_coalesce_us() -> u32 {
-    1500
+    800
 }
 fn default_drop_us() -> u32 {
     8000
