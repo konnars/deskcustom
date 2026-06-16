@@ -1,3 +1,4 @@
+use std::ffi::c_void;
 use std::mem::size_of;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,6 +20,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetCursorPos, HHOOK, KBDLLHOOKSTRUCT, MSLLHOOKSTRUCT, SetWindowsHookExW,
     UnhookWindowsHookEx, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_MOUSEMOVE,
     WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_RBUTTONDOWN, WM_RBUTTONUP,
+    WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 use crate::{InputCapture, InputEvent, InputInject, MouseDelta};
@@ -27,8 +29,8 @@ static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(true);
 
 pub struct WinInputCapture {
     queue: Arc<Mutex<Vec<InputEvent>>>,
-    mouse_hook: HHOOK,
-    keyboard_hook: HHOOK,
+    mouse_hook: isize,
+    keyboard_hook: isize,
 }
 
 pub struct WinInputInject;
@@ -64,8 +66,8 @@ impl WinInputCapture {
 
         Ok(Self {
             queue,
-            mouse_hook,
-            keyboard_hook,
+            mouse_hook: mouse_hook.0 as isize,
+            keyboard_hook: keyboard_hook.0 as isize,
         })
     }
 
@@ -77,8 +79,8 @@ impl WinInputCapture {
 impl Drop for WinInputCapture {
     fn drop(&mut self) {
         unsafe {
-            let _ = UnhookWindowsHookEx(self.mouse_hook);
-            let _ = UnhookWindowsHookEx(self.keyboard_hook);
+            let _ = UnhookWindowsHookEx(HHOOK(self.mouse_hook as *mut c_void));
+            let _ = UnhookWindowsHookEx(HHOOK(self.keyboard_hook as *mut c_void));
         }
     }
 }
@@ -134,8 +136,7 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
         let info = *(lparam.0 as *const MSLLHOOKSTRUCT);
         match wparam.0 as u32 {
             WM_MOUSEMOVE => {
-                let mut point = info.pt;
-                let current = (point.x, point.y);
+                let current = (info.pt.x, info.pt.y);
                 let delta = LAST_MOUSE.with(|cell| {
                     let mut last = cell.borrow_mut();
                     let delta = if let Some(prev) = *last {

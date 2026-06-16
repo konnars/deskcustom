@@ -1,6 +1,6 @@
 use deskcustom_proto::{KeyAction, MouseButton};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MouseDelta {
     pub dx: i32,
     pub dy: i32,
