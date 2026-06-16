@@ -6,6 +6,7 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
+    "build:fast": "tauri build --no-bundle",
     "icons": "tauri icon src-tauri/icons/icon.png --output src-tauri/icons"
   },
   "devDependencies": {
