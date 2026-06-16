@@ -20,4 +20,4 @@ pub use clipboard::{read_text, write_text};
 pub use macos::{MacInputCapture, MacInputInject};
 
 #[cfg(windows)]
-pub use windows::{WinInputCapture, WinInputInject};
+pub use windows::{WinInputCapture, WinInputInject, cursor_position, screen_width};
