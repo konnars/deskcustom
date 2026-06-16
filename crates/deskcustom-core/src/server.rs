@@ -4,8 +4,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use deskcustom_config::Config;
 use deskcustom_platform::InputCapture;
-use deskcustom_proto::{encode, Message, Role, TCP_PORT, UDP_PORT};
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use deskcustom_proto::{encode, Message, Role};
+use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -13,6 +13,7 @@ use tracing::{info, warn};
 use crate::clipboard::{self, PeerSender};
 use crate::debug::{DebugLog, Metrics, log_startup};
 use crate::runtime::RuntimeStatus;
+use crate::netbind::{bind_tcp, bind_udp};
 use crate::tcp;
 
 #[cfg(windows)]
@@ -29,15 +30,11 @@ pub async fn run_server(
 ) -> Result<()> {
     log_startup(&config);
 
-    let udp_addr = format!("{}:{}", config.bind, UDP_PORT);
-    let tcp_addr = format!("{}:{}", config.bind, TCP_PORT);
+    let udp_addr = format!("{}:{}", config.bind, config.udp_port);
+    let tcp_addr = format!("{}:{}", config.bind, config.tcp_port);
 
-    let udp = UdpSocket::bind(&udp_addr)
-        .await
-        .with_context(|| format!("bind UDP {udp_addr}"))?;
-    let tcp = TcpListener::bind(&tcp_addr)
-        .await
-        .with_context(|| format!("bind TCP {tcp_addr}"))?;
+    let udp = bind_udp(&udp_addr).await?;
+    let tcp = bind_tcp(&tcp_addr).await?;
 
     info!(%udp_addr, %tcp_addr, "server listening");
 
@@ -152,7 +149,7 @@ async fn capture_loop(
     cancel: CancellationToken,
 ) -> Result<()> {
     let udp = UdpSocket::bind("0.0.0.0:0").await?;
-    udp.connect(format!("127.0.0.1:{}", UDP_PORT)).await.ok();
+    udp.connect(format!("127.0.0.1:{}", config.udp_port)).await.ok();
 
     let mut keyboard =
         crate::keyboard::KeyboardPolicy::new(config.keyboard.clone(), config.clipboard.clone());

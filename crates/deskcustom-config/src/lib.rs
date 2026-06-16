@@ -11,6 +11,12 @@ pub struct Config {
     #[serde(default = "default_bind")]
     pub bind: String,
 
+    #[serde(default = "default_tcp_port")]
+    pub tcp_port: u16,
+
+    #[serde(default = "default_udp_port")]
+    pub udp_port: u16,
+
     #[serde(default)]
     pub server: ServerConfig,
 
@@ -39,6 +45,14 @@ fn default_role() -> Role {
 
 fn default_bind() -> String {
     "0.0.0.0".into()
+}
+
+fn default_tcp_port() -> u16 {
+    24800
+}
+
+fn default_udp_port() -> u16 {
+    24801
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -271,6 +285,8 @@ impl Default for Config {
         Self {
             role: default_role(),
             bind: default_bind(),
+            tcp_port: default_tcp_port(),
+            udp_port: default_udp_port(),
             server: ServerConfig::default(),
             client: ClientConfig::default(),
             screens: Vec::new(),

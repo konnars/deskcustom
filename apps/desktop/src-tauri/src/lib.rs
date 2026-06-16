@@ -2,7 +2,6 @@ mod update;
 
 use deskcustom_config::{Config, Role};
 use deskcustom_core::{ServiceHandle, local_ipv4_addresses, server_display_addr, snapshot};
-use deskcustom_proto::TCP_PORT;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
@@ -27,6 +26,8 @@ struct UiConfig {
     ctrl_to_cmd: bool,
     update_enabled: bool,
     update_url: String,
+    tcp_port: u16,
+    udp_port: u16,
     app_version: String,
     local_ips: Vec<String>,
     server_display: String,
@@ -93,8 +94,12 @@ async fn save_ui_config(
 #[tauri::command]
 async fn start_service(state: State<'_, AppState>) -> Result<(), String> {
     let mut service_guard = state.service.lock().await;
-    if service_guard.as_ref().is_some_and(|h| h.is_running()) {
-        return Err("Уже запущено".into());
+    if let Some(handle) = service_guard.take() {
+        if handle.is_running() {
+            *service_guard = Some(handle);
+            return Err("Уже запущено".into());
+        }
+        handle.stop().await;
     }
 
     let cfg = state.config.lock().await.clone();
@@ -121,7 +126,8 @@ async fn get_status(state: State<'_, AppState>) -> Result<UiStatus, String> {
     let service_guard = state.service.lock().await;
     if let Some(handle) = service_guard.as_ref() {
         let (status, metrics) = snapshot(handle).await;
-        let suggest_update = status.phase == deskcustom_core::ServicePhase::Error;
+        let suggest_update = status.phase == deskcustom_core::ServicePhase::Error
+            && !status.message.contains("уже занят");
         return Ok(UiStatus {
             running: handle.is_running(),
             phase: format!("{:?}", status.phase).to_lowercase(),
@@ -198,7 +204,9 @@ fn to_ui_config(cfg: &Config) -> UiConfig {
         update_url: cfg.update.manifest_url.clone(),
         app_version: env!("CARGO_PKG_VERSION").into(),
         local_ips: local_ipv4_addresses(),
-        server_display: server_display_addr(TCP_PORT),
+        server_display: server_display_addr(cfg.tcp_port),
+        tcp_port: cfg.tcp_port,
+        udp_port: cfg.udp_port,
     }
 }
 

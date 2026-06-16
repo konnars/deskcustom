@@ -3,6 +3,7 @@ pub mod clipboard;
 pub mod debug;
 pub mod keyboard;
 pub mod mouse;
+pub mod netbind;
 pub mod netutil;
 pub mod runtime;
 pub mod server;

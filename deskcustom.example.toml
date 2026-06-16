@@ -1,5 +1,7 @@
 role = "server"
 bind = "0.0.0.0"
+tcp_port = 24800
+udp_port = 24801
 
 [server]
 capture_input = true

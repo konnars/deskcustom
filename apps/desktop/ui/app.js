@@ -81,6 +81,12 @@ async function loadConfig() {
   setRole(cfg.role);
   els.serverAddr.value = cfg.server_addr || "";
   els.localIp.textContent = cfg.server_display || cfg.local_ips?.[0] || "—";
+  const tcpPort = cfg.tcp_port ?? 24800;
+  const udpPort = cfg.udp_port ?? 24801;
+  const portsHint = document.getElementById("portsHint");
+  if (portsHint) {
+    portsHint.textContent = `Клиент на Mac подключается к этому IP. Порты: ${tcpPort} TCP, ${udpPort} UDP. Если «Запустить» падает — закрой Deskflow/Synergy (они тоже используют 24800).`;
+  }
   els.dpiScale.value = cfg.dpi_scale;
   els.ewmaAlpha.value = cfg.ewma_alpha;
   els.pollCap.value = cfg.poll_rate_cap_hz;
@@ -155,12 +161,15 @@ async function refreshStatus() {
   els.screenLocal.classList.toggle("active", !st.active_screen);
   els.screenRemote.classList.toggle("active", !!st.active_screen);
 
-  if (st.suggest_update || st.phase === "error") {
-    els.errorBannerText.textContent = st.message || "Попробуй обновить приложение";
+  if (st.phase === "error") {
+    const isPortError = /уже занят|bind TCP|bind UDP/i.test(st.message || "");
+    els.errorBannerText.textContent = st.message || "Не удалось запустить сервис";
     els.errorBanner.classList.remove("hidden");
-    if (!updateDismissed) checkUpdates(false);
+    els.errorUpdateBtn.classList.toggle("hidden", isPortError);
+    if (st.suggest_update && !updateDismissed) checkUpdates(false);
   } else {
     els.errorBanner.classList.add("hidden");
+    els.errorUpdateBtn.classList.remove("hidden");
   }
 }
 

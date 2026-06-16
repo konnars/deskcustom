@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use deskcustom_config::Config;
 use deskcustom_platform::{InputEvent, InputInject};
-use deskcustom_proto::{decode, encode, Message, Role, TCP_PORT, UDP_PORT};
+use deskcustom_proto::{decode, encode, Message, Role};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -16,6 +16,7 @@ use crate::debug::{DebugLog, Metrics, log_startup, update_rtt};
 use crate::keyboard::KeyboardPolicy;
 use crate::mouse::MousePipeline;
 use crate::runtime::RuntimeStatus;
+use crate::netbind::bind_udp;
 use crate::tcp;
 
 #[cfg(windows)]
@@ -38,10 +39,8 @@ pub async fn run_client(
     }
 
     let debug = DebugLog::new(&config);
-    let server_udp = resolve_udp_addr(&server)?;
-    let udp = UdpSocket::bind(format!("{}:0", config.bind))
-        .await
-        .context("bind client UDP")?;
+    let server_udp = resolve_udp_addr(&server, config.udp_port)?;
+    let udp = bind_udp(&format!("{}:0", config.bind)).await?;
 
     let hello = encode(&Message::Hello {
         hostname: hostname(),
@@ -49,10 +48,10 @@ pub async fn run_client(
     });
     udp.send_to(&hello, server_udp).await?;
 
-    let tcp_host = server.split(':').next().unwrap_or(&server);
-    let tcp = TcpStream::connect(format!("{tcp_host}:{TCP_PORT}"))
+    let (tcp_host, tcp_port) = parse_server_host_port(&server, config.tcp_port);
+    let tcp = TcpStream::connect(format!("{tcp_host}:{tcp_port}"))
         .await
-        .with_context(|| format!("connect TCP {tcp_host}:{TCP_PORT}"))?;
+        .with_context(|| format!("connect TCP {tcp_host}:{tcp_port}"))?;
 
     {
         let mut st = status.lock().await;
@@ -233,9 +232,18 @@ async fn tcp_read_loop(
     Ok(())
 }
 
-fn resolve_udp_addr(server: &str) -> Result<SocketAddr> {
+fn resolve_udp_addr(server: &str, udp_port: u16) -> Result<SocketAddr> {
     let host = server.split(':').next().unwrap_or(server);
-    Ok(format!("{host}:{UDP_PORT}").parse()?)
+    Ok(format!("{host}:{udp_port}").parse()?)
+}
+
+fn parse_server_host_port(server: &str, default_tcp_port: u16) -> (String, u16) {
+    if let Some((host, port)) = server.rsplit_once(':') {
+        if let Ok(port) = port.parse::<u16>() {
+            return (host.to_string(), port);
+        }
+    }
+    (server.trim().to_string(), default_tcp_port)
 }
 
 fn hostname() -> String {
